@@ -1,29 +1,45 @@
-# Smart IoT Monitoring System — iot-devops
+# Smart IoT Monitoring System — DevOps Setup
 
-This repository holds **operations-only** assets: how to build and publish the database image, build/push all service images, and run the stack with the Docker CLI.
+## Project Overview
 
-**Expected layout** (sibling folders — same parent directory):
+The Smart IoT Monitoring System is a full-stack IoT application designed
+to collect, process, and analyze data from multiple sensors in real-time.
+
+The system consists of three containerized components:
+
+- **Backend** — Java Spring Boot (port 8080)
+- **Frontend** — Angular + TypeScript served via Nginx (port 80)
+- **Database** — MySQL 8.0 (port 3306)
+
+All three components run as Docker containers connected through a shared
+Docker network.
+
+---
+
+## Repository Structure
+
+This repo is one of three sibling repositories:
 
 ```text
 parent/
-  iot-devops/      ← this repo
-  iot-backend/     ← application source + Dockerfile
-  iot-frontend/    ← application source + Dockerfile
+├── iot-devops/       ← this repo (Dockerfile.db, scripts, README)
+├── iot-backend/      ← backend source code + Dockerfile
+└── iot-frontend/     ← frontend source code + Dockerfile
 ```
 
 ---
 
 ## Prerequisites
 
-- Docker 20.10+ — [Install Docker](https://docs.docker.com/get-docker/)
-- A container registry account (e.g. [Docker Hub](https://hub.docker.com)) if you use `build-and-push.sh`
-- Cloned **iot-backend** and **iot-frontend** next to this repo (for local image builds)
+- Docker 20.10.14 or higher — [Install Docker](https://docs.docker.com/get-docker/)
+- A Docker Hub account — [hub.docker.com](https://hub.docker.com)
 
 ---
 
-## Network
+## Network Setup
 
-Create the shared network once:
+All three containers communicate through a shared Docker network.
+Create it once before running any container:
 
 ```bash
 docker network create iot-net
@@ -31,67 +47,61 @@ docker network create iot-net
 
 ---
 
-## Build images (local tags)
+## Quick Start (Pull from Docker Hub)
 
-From the **parent** folder (the one that contains `iot-devops`, `iot-backend`, and `iot-frontend`):
-
-```bash
-export NS=your-dockerhub-username
-export TAG=v1.0
-
-docker build -t "$NS/iot-backend:$TAG" iot-backend/
-docker build -t "$NS/iot-frontend:$TAG" iot-frontend/
-docker build -f iot-devops/Dockerfile.db -t "$NS/iot-db:$TAG" iot-devops/
-```
-
-Or from **inside** `iot-devops/` (only if `../iot-backend` and `../iot-frontend` exist):
+If you just want to run the project without building from source:
 
 ```bash
-export NS=your-dockerhub-username
-export TAG=v1.0
-
-docker build -t "$NS/iot-backend:$TAG" ../iot-backend/
-docker build -t "$NS/iot-frontend:$TAG" ../iot-frontend/
-docker build -f Dockerfile.db -t "$NS/iot-db:$TAG" .
+docker pull faridakhaled/iot-db:v1.0
+docker pull faridakhaled/iot-backend:v1.0
+docker pull faridakhaled/iot-frontend:v1.0
 ```
+
+Then go directly to the **Run the Containers** section below.
 
 ---
 
-## Build and push to Docker Hub
+## Build the Images (Only if Rebuilding from Source)
 
-1. Copy the environment template and edit it:
+Only needed if the code has changed and you need to rebuild the images.
+Run these commands from the parent folder:
 
-   ```bash
-   cd iot-devops
-   cp .env.example .env
-   ```
+```bash
+docker build -t faridakhaled/iot-backend:v1.0 iot-backend/
+docker build -t faridakhaled/iot-frontend:v1.0 iot-frontend/
+docker build -f iot-devops/Dockerfile.db -t faridakhaled/iot-db:v1.0 iot-devops/
+```
 
-2. Set `DOCKER_USERNAME`, `DOCKER_PASSWORD` (use an [access token](https://docs.docker.com/docker-hub/access-tokens/) for Hub), and `IMAGE_TAG` in `.env`.
+Or use the provided script from inside `iot-devops/`:
 
-3. Run:
+```bash
+chmod +x build-and-push.sh
+./build-and-push.sh
+```
 
-   ```bash
-   chmod +x build-and-push.sh
-   ./build-and-push.sh
-   ```
+The script requires a `.env` file in `iot-devops/` with these variables:
 
-The script builds `iot-backend` and `iot-frontend` from **sibling** directories and builds `iot-db` from `Dockerfile.db` in this repo, then pushes all three images.
+```env
+DOCKER_USERNAME=
+DOCKER_PASSWORD=
+MYSQL_ROOT_PASSWORD=
+MYSQL_DATABASE=
+```
+
+> ⚠️ Never commit the `.env` file. It is gitignored.
 
 ---
 
-## Run containers (Docker CLI)
+## Run the Containers
 
-Use the same image names you built (replace `your-dockerhub-username` and `v1.0` with your values). **Start MySQL first** and wait until it accepts connections before starting the API.
+Run in this order — database first, then backend, then frontend:
 
 ```bash
-# Optional: wait for MySQL after the first run
-# until docker exec iot-mysql mysqladmin ping -h localhost --silent; do sleep 2; done
-
 docker run -d --name iot-mysql \
   --network iot-net \
   -e MYSQL_ROOT_PASSWORD='YOUR_SECURE_PASSWORD' \
   -p 3306:3306 \
-  your-dockerhub-username/iot-db:v1.0
+  faridakhaled/iot-db:v1.0
 
 docker run -d --name iot-api \
   --network iot-net \
@@ -100,31 +110,37 @@ docker run -d --name iot-api \
   -e SPRING_DATASOURCE_USERNAME=root \
   -e SPRING_DATASOURCE_PASSWORD='YOUR_SECURE_PASSWORD' \
   -e SPRING_PROFILES_ACTIVE=docker \
-  -e JWT_SECRET='your-jwt-secret-at-least-32-characters-long' \
-  your-dockerhub-username/iot-backend:v1.0
+  -e JWT_SECRET='your-jwt-secret-min-32-characters' \
+  faridakhaled/iot-backend:v1.0
 
 docker run -d --name iot-web \
   --network iot-net \
   -p 80:80 \
-  your-dockerhub-username/iot-frontend:v1.0
+  faridakhaled/iot-frontend:v1.0
 ```
 
-Replace `YOUR_SECURE_PASSWORD` everywhere you use the MySQL root password. `JWT_SECRET` must be at least 32 characters.
-
-> `SPRING_PROFILES_ACTIVE=docker` is optional if the backend image already sets it in its Dockerfile.
+> ⚠️ Replace `YOUR_SECURE_PASSWORD` with your actual MySQL password.
+> `JWT_SECRET` must be at least 32 characters.
 
 ---
 
 ## Verification
 
+Run the following to confirm all 3 containers are running:
+
 ```bash
 docker ps
 ```
 
-You should see `iot-mysql`, `iot-api`, and `iot-web` **Up**.
+You should see these 3 containers with status **Up**:
 
-- **Frontend:** [http://localhost/](http://localhost/)
-- **Backend** (no Actuator in this project): empty login body should return **400**:
+- `iot-mysql` — port 3306
+- `iot-api` — port 8080
+- `iot-web` — port 80
+
+To verify the frontend is accessible, open your browser at `http://localhost/`.
+
+To verify the backend is responding:
 
 ```bash
 curl -s -o /dev/null -w "HTTP %{http_code}\n" -X POST http://localhost:8080/api/auth/login \
@@ -132,21 +148,15 @@ curl -s -o /dev/null -w "HTTP %{http_code}\n" -X POST http://localhost:8080/api/
   -d '{}'
 ```
 
----
-
-## Database image
-
-- **`Dockerfile.db`** — MySQL 8.0, database name `iot_db`. Root password is **not** in the image; pass `MYSQL_ROOT_PASSWORD` at `docker run` (see above).
+Expected response: **HTTP 400** — confirms the server is up and input validation is working.
 
 ---
 
-## Files in this repo
+## Files in This Repo
 
 | File | Purpose |
-|------|--------|
-| `README.md` | Network, build, run, verify |
-| `Dockerfile.db` | MySQL image build |
-| `build-and-push.sh` | Login, build sibling apps, build DB, push all three |
-| `.env.example` | Template for registry credentials and image tag (copy to `.env`) |
-
-Do **not** commit `.env` (it is gitignored).
+|------|---------|
+| `README.md` | Full setup instructions |
+| `Dockerfile.db` | MySQL 8.0 image |
+| `build-and-push.sh` | Builds and pushes all 3 images to Docker Hub |
+| `.env.example` | Credential template — copy to `.env` and fill in |
