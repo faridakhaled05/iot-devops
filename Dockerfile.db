@@ -1,0 +1,5 @@
+FROM mysql:8.0
+# Do not set MYSQL_ROOT_PASSWORD here — it would bake empty unless build-arg is passed.
+# Pass at runtime: docker run -e MYSQL_ROOT_PASSWORD=... (required by the mysql image).
+ENV MYSQL_DATABASE=iot_db
+EXPOSE 3306
