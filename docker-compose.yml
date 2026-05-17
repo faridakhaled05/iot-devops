@@ -1,0 +1,60 @@
+services:
+  db:
+    build:
+      context: .
+      dockerfile: Dockerfile.db
+    image: ${DOCKER_USERNAME}/iot-db:${IMAGE_TAG}
+    ports:
+      - "3306:3306"
+    environment:
+      MYSQL_DATABASE: iot_db
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/db_password
+    volumes:
+      - db_data:/var/lib/mysql
+    secrets:
+      - db_password
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-p$$MYSQL_ROOT_PASSWORD"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./iot-backend
+      dockerfile: Dockerfile
+    image: ${DOCKER_USERNAME}/iot-backend:${IMAGE_TAG}
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_DATASOURCE_URL: jdbc:mysql://db:3306/iot_db?allowPublicKeyRetrieval=true&useSSL=false
+      SPRING_DATASOURCE_USERNAME: root
+      SPRING_PROFILES_ACTIVE: docker
+      TRAFFIC_CRON: "0 */2 * * * *"       
+      AIR_POLLUTION_CRON: "0 */2 * * * *" 
+      STREET_LIGHT_CRON: "0 */2 * * * *"
+    secrets:
+      - db_password
+      - jwt_secret
+    depends_on:
+      db:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: ./iot-frontend
+      dockerfile: Dockerfile
+    image: ${DOCKER_USERNAME}/iot-frontend:${IMAGE_TAG}
+    ports:
+      - "80:80"
+    depends_on:
+      - backend
+
+volumes:
+  db_data:
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
+  jwt_secret:
+    file: ./secrets/jwt_secret.txt
