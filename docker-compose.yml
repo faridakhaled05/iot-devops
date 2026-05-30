@@ -30,8 +30,8 @@ services:
       SPRING_DATASOURCE_URL: jdbc:mysql://db:3306/iot_db?allowPublicKeyRetrieval=true&useSSL=false
       SPRING_DATASOURCE_USERNAME: root
       SPRING_PROFILES_ACTIVE: docker
-      SCHEDULER_TRAFFIC_CRON: "0 */1 * * * *"       
-      SCHEDULER_AIRPOLLUTION_CRON: "0 */3 * * * *" 
+      SCHEDULER_TRAFFIC_CRON: "0 */1 * * * *"
+      SCHEDULER_AIRPOLLUTION_CRON: "0 */3 * * * *"
       SCHEDULER_STREETLIGHT_CRON: "0 */2 * * * *"
     secrets:
       - db_password
@@ -55,6 +55,6 @@ volumes:
 
 secrets:
   db_password:
-    file: ./secrets/db_password.txt
+    file: ${SECRETS_PATH}/db_password.txt
   jwt_secret:
-    file: ./secrets/jwt_secret.txt
+    file: ${SECRETS_PATH}/jwt_secret.txt
