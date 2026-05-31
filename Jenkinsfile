@@ -12,12 +12,6 @@ pipeline {
 
     stages {
 
-        stage('Checkout DevOps') {
-            steps {
-                checkout scm
-            }
-        }
-
         stage('Checkout Backend') {
             steps {
                 dir('iot-backend') {
