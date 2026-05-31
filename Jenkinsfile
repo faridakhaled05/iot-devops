@@ -47,6 +47,7 @@ pipeline {
         stage('Test Frontend') {
             steps {
                 dir('iot-frontend') {
+                    sh 'rm -rf node_modules'
                     sh 'npm ci'
                     sh 'npm test -- --watch=false'
                 }
