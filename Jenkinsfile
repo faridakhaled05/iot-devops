@@ -48,7 +48,7 @@ pipeline {
             steps {
                 dir('iot-frontend') {
                     sh 'npm ci'
-                    sh 'npm test -- --watch=false --browsers=ChromeHeadless || true'
+                    sh 'npm test -- --watch=false'
                 }
             }
         }
