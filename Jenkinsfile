@@ -30,23 +30,26 @@ pipeline {
             }
         }
 
-        stage('Test Backend') {
-            steps {
-                dir('iot-backend') {
-                    sh 'mvn test -Dspring.profiles.active=test || true'
+        stage('Test') {
+            parallel {
+                stage('Test Backend') {
+                    steps {
+                        dir('iot-backend') {
+                            sh 'mvn test -Dspring.profiles.active=test'
+                        }
+                    }
+                }
+                stage('Test Frontend') {
+                    steps {
+                        dir('iot-frontend') {
+                            sh 'rm -rf node_modules'
+                            sh 'npm ci'
+                            sh 'npm test -- --watch=false'
+                        }
+                    }
                 }
             }
-        }
-
-        stage('Test Frontend') {
-            steps {
-                dir('iot-frontend') {
-                    sh 'rm -rf node_modules'
-                    sh 'npm ci'
-                    sh 'npm test -- --watch=false'
-                }
-            }
-        }
+        }       
 
         stage('Build & Push Backend') {
             steps {
