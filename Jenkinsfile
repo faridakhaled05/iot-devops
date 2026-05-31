@@ -106,14 +106,14 @@ pipeline {
                 ]) {
                     sh '''
                         mkdir -p secrets
-                        echo "$DB_PASSWORD" > secrets/db_password.txt
-                        echo "$JWT_SECRET"  > secrets/jwt_secret.txt
+                        printf '%s' "\$DB_PASSWORD" > "\$WORKSPACE/secrets/db_password.txt"
+                        printf '%s' "\$JWT_SECRET"  > "\$WORKSPACE/secrets/jwt_secret.txt"
 
                         DOCKER_USERNAME=$DOCKER_USERNAME \
                         IMAGE_TAG=$IMAGE_TAG \
                         DB_PASSWORD="$DB_PASSWORD" \
                         JWT_SECRET="$JWT_SECRET" \
-                        SECRETS_PATH=$WORKSPACE/secrets \
+                        SECRETS_PATH="${HOST_WORKSPACE_ROOT}/${JOB_NAME}/secrets" \
                         docker-compose -f docker-compose.yml up -d --force-recreate
                     '''
                 }
