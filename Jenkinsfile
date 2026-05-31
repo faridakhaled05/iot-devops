@@ -124,7 +124,7 @@ pipeline {
                 sh '''
                     sleep 20
                     docker ps --format "table {{.Names}}\t{{.Status}}" | grep -E "backend|frontend|db"
-                    docker logs iot-devops-backend-1 --tail 20 | grep -i "started\|error\|failed"
+                    docker logs iot-devops-backend-1 --tail 20 | grep -iE "started|error|failed"
                 '''
             }
         }
