@@ -83,6 +83,7 @@ pipeline {
                     passwordVariable: 'DH_PASS'
                 )]) {
                     sh '''
+                        sed -i 's/npm run build/npm run build -- --configuration development/' iot-frontend/Dockerfile
                         echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
                         docker buildx build \
                             --builder $BUILDER \
