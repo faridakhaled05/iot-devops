@@ -30,7 +30,6 @@ services:
       SPRING_DATASOURCE_URL: jdbc:mysql://db:3306/iot_db?allowPublicKeyRetrieval=true&useSSL=false
       SPRING_DATASOURCE_USERNAME: root
       SPRING_PROFILES_ACTIVE: docker
-      JWT_SECRET: ${JWT_SECRET}
       SCHEDULER_TRAFFIC_CRON: "0 */1 * * * *"
       SCHEDULER_AIRPOLLUTION_CRON: "0 */3 * * * *"
       SCHEDULER_STREETLIGHT_CRON: "0 */2 * * * *"
