@@ -108,7 +108,6 @@ pipeline {
 
                         DOCKER_USERNAME=$DOCKER_USERNAME \
                         IMAGE_TAG=$IMAGE_TAG \
-                        JWT_SECRET="$JWT_SECRET" \
                         SECRETS_PATH="${HOST_WORKSPACE_ROOT}/${JOB_NAME}/secrets" \
                         docker-compose -f docker-compose.yml up -d --force-recreate
                     '''
