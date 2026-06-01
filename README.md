@@ -1,154 +1,37 @@
-# Smart IoT Monitoring System — DevOps Setup
+# Sensorix — DevOps Setup (Sprint 3)
 
 ## Project Overview
 
-The Smart IoT Monitoring System is a full-stack IoT application designed
-to collect, process, and analyze data from multiple sensors in real-time.
+Sensorix is a full-stack IoT monitoring system that collects, processes, and visualizes
+real-time sensor data for traffic, air pollution, and street lighting.
 
 The system consists of three containerized components:
 
 - **Backend** — Java Spring Boot (port 8080)
-- **Frontend** — Angular + TypeScript served via Nginx (port 80)
+- **Frontend** — Angular 21 served via Nginx (port 80)
 - **Database** — MySQL 8.0 (port 3306)
 
-All three components run as Docker containers connected through a shared
-Docker network.
+All three components are orchestrated via Docker Compose and deployed automatically
+through a Jenkins CI/CD pipeline.
 
 ---
 
 ## Repository Structure
 
-This repo is one of three sibling repositories:
+This repo is one of three sibling repositories. Clone all three at the same level:
 
 ```text
 parent/
-├── iot-devops/       ← this repo (Dockerfile.db, scripts, README)
-├── iot-backend/      ← backend source code + Dockerfile
-└── iot-frontend/     ← frontend source code + Dockerfile
+├── iot-devops/        ← this repo — Dockerfiles, Compose, Jenkins, scripts
+├── iot-backend/       ← Java Spring Boot source + Dockerfile
+└── iot-frontend/      ← Angular source + Dockerfile
 ```
-
----
-
-## Prerequisites
-
-- Docker 20.10.14 or higher — [Install Docker](https://docs.docker.com/get-docker/)
-- A Docker Hub account — [hub.docker.com](https://hub.docker.com)
-
----
-
-## Network Setup
-
-All three containers communicate through a shared Docker network.
-Create it once before running any container:
 
 ```bash
-docker network create iot-net
+git clone https://github.com/faridakhaled05/iot-devops.git
+git clone https://github.com/Yosra-01/iot-backend.git
+git clone https://github.com/SalmaaKhaledd/iot-frontend.git
 ```
-
----
-
-## Quick Start (Pull from Docker Hub)
-
-If you just want to run the project without building from source:
-
-```bash
-docker pull faridakhaled/iot-db:v1.0
-docker pull faridakhaled/iot-backend:v1.0
-docker pull faridakhaled/iot-frontend:v1.0
-```
-
-Then go directly to the **Run the Containers** section below.
-
----
-
-## Build the Images (Only if Rebuilding from Source)
-
-Only needed if the code has changed and you need to rebuild the images.
-Run these commands from the parent folder:
-
-```bash
-docker build -t faridakhaled/iot-backend:v1.0 iot-backend/
-docker build -t faridakhaled/iot-frontend:v1.0 iot-frontend/
-docker build -f iot-devops/Dockerfile.db -t faridakhaled/iot-db:v1.0 iot-devops/
-```
-
-Or use the provided script from inside `iot-devops/`:
-
-```bash
-chmod +x build-and-push.sh
-./build-and-push.sh
-```
-
-The script requires a `.env` file in `iot-devops/` with these variables:
-
-```env
-DOCKER_USERNAME=
-DOCKER_PASSWORD=
-MYSQL_ROOT_PASSWORD=
-MYSQL_DATABASE=
-```
-
-> ⚠️ Never commit the `.env` file. It is gitignored.
-
----
-
-## Run the Containers
-
-Run in this order — database first, then backend, then frontend:
-
-```bash
-docker run -d --name iot-mysql \
-  --network iot-net \
-  -e MYSQL_ROOT_PASSWORD='YOUR_SECURE_PASSWORD' \
-  -p 3306:3306 \
-  faridakhaled/iot-db:v1.0
-
-docker run -d --name iot-api \
-  --network iot-net \
-  -p 8080:8080 \
-  -e SPRING_DATASOURCE_URL='jdbc:mysql://iot-mysql:3306/iot_db' \
-  -e SPRING_DATASOURCE_USERNAME=root \
-  -e SPRING_DATASOURCE_PASSWORD='YOUR_SECURE_PASSWORD' \
-  -e SPRING_PROFILES_ACTIVE=docker \
-  -e JWT_SECRET='your-jwt-secret-min-32-characters' \
-  faridakhaled/iot-backend:v1.0
-
-docker run -d --name iot-web \
-  --network iot-net \
-  -p 80:80 \
-  faridakhaled/iot-frontend:v1.0
-```
-
-> ⚠️ Replace `YOUR_SECURE_PASSWORD` with your actual MySQL password.
-> `JWT_SECRET` must be at least 32 characters.
-
----
-
-## Verification
-
-Run the following to confirm all 3 containers are running:
-
-```bash
-docker ps
-```
-
-You should see these 3 containers with status **Up**:
-
-- `iot-mysql` — port 3306
-- `iot-api` — port 8080
-- `iot-web` — port 80
-
-To verify the frontend is accessible, open your browser at `http://localhost/`.
-
-To verify the backend is responding:
-
-```bash
-curl -s -o /dev/null -w "HTTP %{http_code}\n" -X POST http://localhost:8080/api/auth/login \
-  -H "Content-Type: application/json" \
-  -d '{}'
-```
-
-Expected response: **HTTP 400** — confirms the server is up and input validation is working.
 
 ---
 
@@ -156,7 +39,537 @@ Expected response: **HTTP 400** — confirms the server is up and input validati
 
 | File | Purpose |
 |------|---------|
-| `README.md` | Full setup instructions |
-| `Dockerfile.db` | MySQL 8.0 image |
-| `build-and-push.sh` | Builds and pushes all 3 images to Docker Hub |
-| `.env.example` | Credential template — copy to `.env` and fill in |
+| `README.md` | Full setup and recreation instructions |
+| `Dockerfile.db` | MySQL 8.0 custom image with database name baked in |
+| `Dockerfile.jenkins` | Custom Jenkins image with Docker, Maven, Node, Compose installed |
+| `docker-compose.yml` | Orchestrates all three containers with secrets and healthchecks |
+| `docker-entrypoint.sh` | Backend entrypoint — reads Docker secret files and exports as env vars |
+| `build-and-push.sh` | Manual script to build and push all three images to Docker Hub |
+| `Jenkinsfile` | CI/CD pipeline definition — all stages from build to deploy |
+| `.env.example` | Template for required environment variables — copy to `.env` and fill in |
+
+---
+
+## Prerequisites
+
+- Docker Engine 20.10+ or Docker Desktop 4.x+ — [Install Docker](https://docs.docker.com/get-docker/)
+- Git
+- A Docker Hub account — [hub.docker.com](https://hub.docker.com)
+- Java 21 and Maven (only needed if running backend locally outside Docker)
+- Node.js 20 (only needed if running frontend locally outside Docker)
+
+---
+
+## ⚠️ Apple Silicon (Mac M1/M2/M3) — Read This First
+
+This setup was originally developed on Apple Silicon. There are two things in the
+configuration that are Mac-specific. If you are on Linux or Windows, read this section
+before proceeding.
+
+### 1. Docker Compose Binary in `Dockerfile.jenkins`
+
+The `Dockerfile.jenkins` downloads the ARM64 build of Docker Compose:
+
+```dockerfile
+RUN curl -L "https://github.com/docker/compose/releases/download/v2.27.0/docker-compose-linux-aarch64" \
+    -o /usr/local/bin/docker-compose && \
+    chmod +x /usr/local/bin/docker-compose
+```
+
+**If you are on Linux or Windows (x86_64):** replace `aarch64` with `x86_64`:
+
+```dockerfile
+RUN curl -L "https://github.com/docker/compose/releases/download/v2.27.0/docker-compose-linux-x86_64" \
+    -o /usr/local/bin/docker-compose && \
+    chmod +x /usr/local/bin/docker-compose
+```
+
+Using the wrong architecture binary causes `exec format error` at runtime.
+
+### 2. The `buildx` Builder and `--platform` Flag in the Jenkinsfile
+
+The Jenkinsfile uses a custom buildx builder named `native` and forces `--platform linux/amd64`.
+This was necessary on Mac because Docker Desktop's default builder on Apple Silicon produces
+multi-platform manifest lists that cannot be pushed to Docker Hub as standard images.
+
+**If you are on Linux or Windows:** you likely do not need buildx at all. You can simplify
+the Build & Push stages in the Jenkinsfile to use plain `docker build`:
+
+```groovy
+// Replace this (Mac-specific):
+sh '''
+    docker buildx build \
+        --builder $BUILDER \
+        --platform linux/amd64 \
+        --load \
+        -t $BACKEND_IMAGE \
+        -f iot-backend/Dockerfile \
+        iot-backend/
+    docker push $BACKEND_IMAGE
+'''
+
+// With this (Linux/Windows):
+sh '''
+    docker build \
+        -t $BACKEND_IMAGE \
+        -f iot-backend/Dockerfile \
+        iot-backend/
+    docker push $BACKEND_IMAGE
+'''
+```
+
+Also remove or skip Step 7 (Create the buildx Builder) in Part 2 below.
+
+You can also remove the `BUILDER = 'native'` line from the `environment` block
+in the Jenkinsfile since it will no longer be referenced.
+
+---
+
+## Part 1 — Manual Build and Run (Without Jenkins)
+
+Use this path to verify the stack works before setting up CI/CD.
+
+### Step 1 — Create the `.env` File
+
+Inside `iot-devops/`, create a `.env` file. This file is gitignored — never commit it.
+
+```bash
+cd iot-devops
+cp .env.example .env
+```
+
+Fill in the values with your own Docker Hub username and credentials:
+
+```env
+DOCKER_USERNAME=your_dockerhub_username
+DOCKER_PASSWORD=your_dockerhub_password
+IMAGE_TAG=v3.0
+SECRETS_PATH=./secrets
+```
+
+### Step 2 — Create the Secrets Files
+
+Docker Compose reads secrets from files, not plain environment variables.
+Create the secrets directory and files manually:
+
+```bash
+mkdir -p secrets
+printf '%s' 'your_mysql_root_password' > secrets/db_password.txt
+printf '%s' 'your_jwt_secret_minimum_32_characters' > secrets/jwt_secret.txt
+```
+
+> ⚠️ The `secrets/` directory is gitignored. Never commit secret files.
+> Use `printf '%s'` rather than `echo` to avoid writing a trailing newline
+> into the secret file — a trailing newline causes silent auth failures.
+
+### Step 3 — Build and Push All Images
+
+Run the provided script from inside `iot-devops/`:
+
+```bash
+chmod +x build-and-push.sh
+./build-and-push.sh
+```
+
+This script:
+1. Validates that `.env` exists and all required variables are set
+2. Validates that `iot-backend/` and `iot-frontend/` sibling directories exist
+3. Logs into Docker Hub using your credentials from `.env`
+4. Builds and pushes `iot-backend:v3.0`, `iot-frontend:v3.0`, `iot-db:v3.0`
+
+To build images manually without the script (run from the parent directory):
+
+```bash
+docker build -f iot-backend/Dockerfile -t your_dockerhub_username/iot-backend:v3.0 iot-backend/
+docker build -f iot-frontend/Dockerfile -t your_dockerhub_username/iot-frontend:v3.0 iot-frontend/
+docker build -f iot-devops/Dockerfile.db -t your_dockerhub_username/iot-db:v3.0 iot-devops/
+```
+
+### Step 4 — Run the Stack with Docker Compose
+
+From inside `iot-devops/`:
+
+```bash
+DOCKER_USERNAME=your_dockerhub_username \
+IMAGE_TAG=v3.0 \
+SECRETS_PATH=./secrets \
+docker-compose up -d
+```
+
+Docker Compose starts containers in this order automatically:
+1. `db` — waits until MySQL healthcheck passes (can take 20–30 seconds)
+2. `backend` — starts only after db reports healthy
+3. `frontend` — starts after backend
+
+### Step 5 — Verify the Stack
+
+Check all three containers are running:
+
+```bash
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+```
+
+Expected output — all three showing `Up`, db showing `(healthy)`:
+
+```
+iot-devops-db-1         Up 2 minutes (healthy)   0.0.0.0:3306->3306/tcp
+iot-devops-backend-1    Up 1 minute              0.0.0.0:8080->8080/tcp
+iot-devops-frontend-1   Up 1 minute              0.0.0.0:80->80/tcp
+```
+
+Verify the backend started correctly:
+
+```bash
+docker logs iot-devops-backend-1 --tail 20
+```
+
+Look for:
+```
+Started [ApplicationName] in X.XXX seconds
+```
+
+Verify the backend API is responding:
+
+```bash
+curl -s -o /dev/null -w "HTTP %{http_code}\n" -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{}'
+```
+
+Expected: **HTTP 400** — server is up and input validation is working.
+
+Open the frontend in your browser:
+
+```
+http://localhost
+```
+
+### Stopping the Stack
+
+```bash
+docker-compose down
+```
+
+To also remove the database volume (wipes all data):
+
+```bash
+docker-compose down -v
+```
+
+---
+
+## Part 2 — Jenkins CI/CD Pipeline Setup
+
+This is the automated path. The pipeline builds, tests, pushes, and deploys
+the full stack automatically.
+
+### Step 1 — Update `Dockerfile.jenkins` for Your Architecture
+
+Before building, check the Docker Compose binary URL in `Dockerfile.jenkins`
+and make sure it matches your CPU architecture:
+
+- **Apple Silicon (Mac M1/M2/M3):** use `docker-compose-linux-aarch64` ← already in the file
+- **Linux / Windows x86_64:** change to `docker-compose-linux-x86_64`
+
+See the Apple Silicon section at the top of this README for the exact line to change.
+
+### Step 2 — Build the Jenkins Image
+
+From inside `iot-devops/`:
+
+```bash
+docker build -f Dockerfile.jenkins -t sensorix-jenkins .
+```
+
+This builds a custom Jenkins image that includes:
+- Docker CLI (to run docker commands inside pipelines)
+- Docker Compose v2.27.0 (architecture-specific binary)
+- Maven (to build and test the Java backend)
+- Node.js 20 + npm (to build and test the Angular frontend)
+
+### Step 3 — Create the Jenkins Workspace Directory on the Host
+
+This directory is mounted into the Jenkins container so that Docker Compose
+can access secret files written by Jenkins during the Deploy stage.
+
+```bash
+mkdir -p /tmp/jenkins-workspace
+```
+
+> ⚠️ On Linux and Windows, `/tmp` may or may not be cleared on reboot depending
+> on your OS configuration. If Jenkins loses its workspace directory, recreate it
+> with the same command and restart the Jenkins container.
+
+### Step 4 — Run the Jenkins Container
+
+```bash
+docker run -d \
+  --name sensorix-jenkins \
+  -p 9090:8080 \
+  -p 50000:50000 \
+  -v /var/run/docker.sock:/var/run/docker.sock \
+  -v jenkins_home:/var/jenkins_home \
+  -v /tmp/jenkins-workspace:/var/jenkins_home/workspace \
+  sensorix-jenkins
+```
+
+Flag explanation:
+- `-p 9090:8080` — Jenkins UI is at `localhost:9090` (internal Jenkins port is 8080)
+- `-p 50000:50000` — Jenkins agent port for connecting future build agents
+- `-v /var/run/docker.sock:/var/run/docker.sock` — mounts host Docker socket so Jenkins can run docker commands via the host daemon
+- `-v jenkins_home:/var/jenkins_home` — named volume that persists Jenkins config, credentials, plugins, and job history across container restarts
+- `-v /tmp/jenkins-workspace:/var/jenkins_home/workspace` — exposes the Jenkins workspace to the host filesystem so docker-compose can resolve secret file paths
+
+### Step 5 — Fix Docker Socket Permissions
+
+```bash
+docker exec -u root sensorix-jenkins chmod 666 /var/run/docker.sock
+```
+
+Without this, Jenkins gets `permission denied` when trying to run docker commands.
+
+> On Linux this is typically needed once after container creation.
+> On Mac with Docker Desktop, the socket is recreated on every Docker restart
+> so this command must be re-run after every restart.
+
+### Step 6 — Get the Jenkins Initial Admin Password
+
+```bash
+docker exec sensorix-jenkins cat /var/jenkins_home/secrets/initialAdminPassword
+```
+
+### Step 7 — Complete Jenkins Initial Setup
+
+1. Open `http://localhost:9090` in your browser
+2. Paste the initial admin password
+3. Select **Install suggested plugins** and wait for installation to complete
+4. Create your admin user
+5. Accept the default Jenkins URL (`http://localhost:9090/`)
+
+### Step 8 — Create the buildx Builder (Mac Only — Skip on Linux/Windows)
+
+> **Linux/Windows users:** skip this step entirely and update the Jenkinsfile
+> as described in the Apple Silicon section at the top of this README.
+
+On Mac, Jenkins uses a custom buildx builder named `native` to produce
+images that can be pushed to Docker Hub. Create it once on the host:
+
+```bash
+docker buildx create --name native --driver docker-container --use
+docker buildx inspect native --bootstrap
+```
+
+Verify it was created:
+
+```bash
+docker buildx ls
+```
+
+You should see `native` listed with driver `docker-container`.
+
+### Step 9 — Set the Global Environment Variable
+
+Jenkins needs to know the host-side path of the workspace so docker-compose
+can resolve secret file paths correctly.
+
+1. Go to **Manage Jenkins → System**
+2. Scroll to **Global properties**
+3. Check **Environment variables**
+4. Click **Add** and enter:
+   - Name: `HOST_WORKSPACE_ROOT`
+   - Value: `/tmp/jenkins-workspace`
+5. Click **Save**
+
+### Step 10 — Add Credentials to Jenkins
+
+Go to **Manage Jenkins → Credentials → System → Global credentials → Add Credential**.
+
+Add these three credentials. The IDs must match exactly — the Jenkinsfile references them by ID.
+
+**Docker Hub credentials:**
+- Kind: `Username with password`
+- Username: your Docker Hub username
+- Password: your Docker Hub password
+- ID: `dockerhub-credentials`
+
+**Database password:**
+- Kind: `Secret text`
+- Secret: your MySQL root password (choose any strong password)
+- ID: `db-password`
+
+**JWT secret:**
+- Kind: `Secret text`
+- Secret: your JWT signing secret (minimum 32 characters)
+- ID: `jwt-secret`
+
+### Step 11 — Update the Jenkinsfile Environment Block
+
+Open `Jenkinsfile` in `iot-devops/` and set your Docker Hub username:
+
+```groovy
+environment {
+    DOCKERHUB_USER  = 'your_dockerhub_username'   ← change this
+    IMAGE_TAG       = 'v3.0'
+    BUILDER         = 'native'
+    ...
+}
+```
+
+Commit and push the change to the `iot-devops` repo before creating the pipeline job.
+
+### Step 12 — Create the Pipeline Job
+
+1. Click **New Item**
+2. Enter name: `iot-devops-pipeline`
+3. Select **Pipeline** and click OK
+4. Under **Pipeline**, set Definition to `Pipeline script from SCM`
+5. Set SCM to `Git`
+6. Repository URL: `https://github.com/faridakhaled05/iot-devops.git`
+7. Branch: `*/main`
+8. Script Path: `Jenkinsfile`
+9. Click **Save**
+
+### Step 13 — Run the Pipeline
+
+Click **Build Now** on the pipeline page.
+
+The pipeline runs these stages in order:
+
+| Stage | What It Does |
+|-------|-------------|
+| Checkout Backend | Clones `iot-backend` repo into workspace |
+| Checkout Frontend | Clones `iot-frontend` repo into workspace |
+| Test (parallel) | Runs `mvn test` and `npm test` simultaneously |
+| Build & Push Backend | Builds backend image, pushes to Docker Hub |
+| Build & Push Frontend | Builds frontend image, pushes to Docker Hub |
+| Deploy | Writes secret files, runs `docker-compose up --force-recreate` |
+| Smoke Test | Verifies all containers are running and backend started |
+
+### Step 14 — Verify the Pipeline
+
+After the pipeline goes green:
+
+```bash
+# All three containers should be Up
+docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
+
+# Backend log should contain "Started"
+docker logs iot-devops-backend-1 --tail 20
+
+# Verify backend API
+curl -s -o /dev/null -w "HTTP %{http_code}\n" -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" -d '{}'
+```
+
+Open the frontend: `http://localhost`
+
+---
+
+## After Every Docker Restart
+
+The Docker socket permissions reset when Docker restarts. Run this before
+running the pipeline again:
+
+```bash
+docker exec -u root sensorix-jenkins chmod 666 /var/run/docker.sock
+```
+
+If the Jenkins container itself was stopped, start it first:
+
+```bash
+docker start sensorix-jenkins
+docker exec -u root sensorix-jenkins chmod 666 /var/run/docker.sock
+```
+
+On Mac, also recreate the workspace directory if needed:
+
+```bash
+mkdir -p /tmp/jenkins-workspace
+```
+
+---
+
+## Docker Hub Images
+
+Images are pushed to Docker Hub under the account configured in `.env` and the Jenkinsfile.
+Each team member uses their own Docker Hub account. The image names follow this pattern:
+
+```
+your_dockerhub_username/iot-backend:v3.0
+your_dockerhub_username/iot-frontend:v3.0
+your_dockerhub_username/iot-db:v3.0
+```
+
+To pull and run without building from source:
+
+```bash
+mkdir -p secrets
+printf '%s' 'your_mysql_password' > secrets/db_password.txt
+printf '%s' 'your_jwt_secret_32chars_minimum' > secrets/jwt_secret.txt
+
+DOCKER_USERNAME=your_dockerhub_username \
+IMAGE_TAG=v3.0 \
+SECRETS_PATH=./secrets \
+docker-compose up -d
+```
+
+---
+
+## Troubleshooting
+
+**Backend container exits immediately:**
+```bash
+docker logs iot-devops-backend-1
+```
+Most common cause: database not ready, or secret files empty/missing.
+Check secret files:
+```bash
+cat secrets/db_password.txt
+cat secrets/jwt_secret.txt
+```
+
+**`permission denied` on Docker socket in Jenkins:**
+```bash
+docker exec -u root sensorix-jenkins chmod 666 /var/run/docker.sock
+```
+
+**`exec format error` for docker-compose inside Jenkins:**
+Wrong CPU architecture binary in `Dockerfile.jenkins`. Rebuild the Jenkins image
+after correcting the URL — use `aarch64` for Mac, `x86_64` for Linux/Windows.
+
+**`docker-compose: command not found` inside Jenkins:**
+The compose download failed during image build. Rebuild Jenkins image and check
+the build output for curl errors.
+
+**Deploy stage fails — secret file not found:**
+`HOST_WORKSPACE_ROOT` is not set or incorrect. Verify it is set to `/tmp/jenkins-workspace`
+in Manage Jenkins → System → Global properties → Environment variables.
+Also verify the directory exists on the host:
+```bash
+ls /tmp/jenkins-workspace
+```
+
+**buildx builder `native` not found (Mac only):**
+```bash
+docker buildx create --name native --driver docker-container --use
+docker buildx inspect native --bootstrap
+```
+
+**Containers start but frontend shows blank page or API errors:**
+```bash
+docker logs iot-devops-backend-1 --tail 50
+curl -s -o /dev/null -w "HTTP %{http_code}\n" -X POST http://localhost:8080/api/auth/login \
+  -H "Content-Type: application/json" -d '{}'
+```
+Expected: HTTP 400. Anything else means the backend did not start correctly.
+
+---
+
+## Security Notes
+
+- Never commit `.env`, `secrets/`, or any file containing passwords or tokens
+- Both `.env` and `secrets/` are listed in `.gitignore`
+- Jenkins credentials are encrypted at rest using the master key stored in `jenkins_home`
+- Secret values are masked as `****` in all Jenkins build logs
+- Docker Compose secrets are mounted as read-only files at `/run/secrets/` inside containers — never visible via `docker inspect`
+- The backend runs as a non-root `spring` user inside its container

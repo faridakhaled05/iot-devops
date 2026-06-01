@@ -31,8 +31,8 @@ services:
       SPRING_DATASOURCE_USERNAME: root
       SPRING_PROFILES_ACTIVE: docker
       SCHEDULER_TRAFFIC_CRON: "0 */1 * * * *"
-      SCHEDULER_AIRPOLLUTION_CRON: "0 */3 * * * *"
-      SCHEDULER_STREETLIGHT_CRON: "0 */2 * * * *"
+      SCHEDULER_AIRPOLLUTION_CRON: "0 */1 * * * *"
+      SCHEDULER_STREETLIGHT_CRON: "0 */1 * * * *"
     secrets:
       - db_password
       - jwt_secret
