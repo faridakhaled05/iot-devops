@@ -60,10 +60,7 @@ pipeline {
                 )]) {
                     sh '''
                         echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
-                        docker buildx build \
-                            --builder $BUILDER \
-                            --platform linux/amd64 \
-                            --load \
+                        docker build \
                             -t $BACKEND_IMAGE \
                             -f iot-backend/Dockerfile \
                             iot-backend/
@@ -82,10 +79,10 @@ pipeline {
                 )]) {
                     sh '''
                         docker build \
-                            -t $BACKEND_IMAGE \
-                            -f iot-backend/Dockerfile \
-                            iot-backend/
-                        docker push $BACKEND_IMAGE
+                            -t $FRONTEND_IMAGE \
+                            -f iot-frontend/Dockerfile \
+                            iot-frontend/
+                        docker push $FRONTEND_IMAGE
                     '''
                 }
             }
