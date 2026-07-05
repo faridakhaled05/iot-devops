@@ -2,9 +2,9 @@ pipeline {
     agent any
 
     environment {
-        DOCKERHUB_USER  = 'salmakhaledabdou'
-        IMAGE_TAG       = 'v3.0'
-        BUILDER         = 'native'
+        DOCKERHUB_USER  = 'yosra01'
+        IMAGE_TAG       = 'v4.0'
+        //BUILDER         = 'native'   -> mac specific
         DOCKER_USERNAME = "${DOCKERHUB_USER}"
         BACKEND_IMAGE   = "${DOCKERHUB_USER}/iot-backend:${IMAGE_TAG}"
         FRONTEND_IMAGE  = "${DOCKERHUB_USER}/iot-frontend:${IMAGE_TAG}"
@@ -81,15 +81,11 @@ pipeline {
                     passwordVariable: 'DH_PASS'
                 )]) {
                     sh '''
-                        echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
-                        docker buildx build \
-                            --builder $BUILDER \
-                            --platform linux/amd64 \
-                            --load \
-                            -t $FRONTEND_IMAGE \
-                            -f iot-frontend/Dockerfile \
-                            iot-frontend/
-                        docker push $FRONTEND_IMAGE
+                        docker build \
+                            -t $BACKEND_IMAGE \
+                            -f iot-backend/Dockerfile \
+                            iot-backend/
+                        docker push $BACKEND_IMAGE
                     '''
                 }
             }
