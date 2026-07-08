@@ -2,9 +2,9 @@ pipeline {
     agent any
 
     environment {
-        DOCKERHUB_USER  = 'salmakhaledabdou'
-        IMAGE_TAG       = 'v3.0'
-        BUILDER         = 'native'
+        DOCKERHUB_USER  = 'yosra01'
+        IMAGE_TAG       = 'v4.0'
+        //BUILDER         = 'native'   -> mac specific
         DOCKER_USERNAME = "${DOCKERHUB_USER}"
         BACKEND_IMAGE   = "${DOCKERHUB_USER}/iot-backend:${IMAGE_TAG}"
         FRONTEND_IMAGE  = "${DOCKERHUB_USER}/iot-frontend:${IMAGE_TAG}"
@@ -60,10 +60,7 @@ pipeline {
                 )]) {
                     sh '''
                         echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
-                        docker buildx build \
-                            --builder $BUILDER \
-                            --platform linux/amd64 \
-                            --load \
+                        docker build \
                             -t $BACKEND_IMAGE \
                             -f iot-backend/Dockerfile \
                             iot-backend/
@@ -81,11 +78,7 @@ pipeline {
                     passwordVariable: 'DH_PASS'
                 )]) {
                     sh '''
-                        echo "$DH_PASS" | docker login -u "$DH_USER" --password-stdin
-                        docker buildx build \
-                            --builder $BUILDER \
-                            --platform linux/amd64 \
-                            --load \
+                        docker build \
                             -t $FRONTEND_IMAGE \
                             -f iot-frontend/Dockerfile \
                             iot-frontend/
@@ -120,7 +113,7 @@ pipeline {
                 sh '''
                     sleep 20
                     docker ps --format "table {{.Names}}\t{{.Status}}" | grep -E "backend|frontend|db"
-                    docker logs sensorix-pipeline-backend-1 --tail 20 | grep -iE "started|error|failed"
+                    docker logs iot-devops-pipeline-iot-backend-svc-1 --tail 20 | grep -iE "started|error|failed"
                 '''
             }
         }
