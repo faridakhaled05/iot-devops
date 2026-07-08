@@ -19,7 +19,7 @@ services:
       timeout: 5s
       retries: 10
 
-  backend:
+  iot-backend-svc:
     build:
       context: ./iot-backend
       dockerfile: Dockerfile
@@ -48,7 +48,7 @@ services:
     ports:
       - "80:80"
     depends_on:
-      - backend
+      - iot-backend-svc
 
 volumes:
   db_data:
