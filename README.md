@@ -565,11 +565,156 @@ Expected: HTTP 400. Anything else means the backend did not start correctly.
 
 ---
 
+## Part 3 — Kubernetes Deployment (Sprint 4)
+ 
+This path runs the full stack on a local Kubernetes cluster via minikube, instead of
+Docker Compose. All manifests referenced below already exist in this repo under `k8s/`.
+ 
+### Prerequisites
+ 
+- `kubectl` 
+- `minikube` 
+- Docker (already required above)
+### Step 1 — Install kubectl and minikube
+
+The following commands are for Linux OS. If you're using a different OS, check [kubernetes guide for the installation](https://kubernetes.io/docs/tasks/tools/)
+ 
+```bash
+# kubectl
+curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+sudo install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+ 
+# minikube
+curl -LO https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+sudo install minikube-linux-amd64 /usr/local/bin/minikube
+```
+ 
+Verify both:
+```bash
+kubectl version --client
+minikube version
+```
+ 
+### Step 2 — Start the Cluster
+ 
+```bash
+minikube start --driver=docker
+```
+ 
+This starts a single-node cluster using your existing Docker installation. First run
+downloads a base image and may take a few minutes.
+ 
+Verify:
+```bash
+minikube status
+kubectl get nodes
+```
+ 
+You should see one node with status `Ready`.
+ 
+### Step 3 — Create Your Real Secret File
+ 
+The K8s Secret holding the database password and JWT secret is gitignored — only a
+template is committed. Copy the template and fill in real values:
+ 
+```bash
+cp k8s/secret.yaml.example k8s/secret.yaml
+nano k8s/secret.yaml
+```
+ 
+Replace the placeholder values with your actual MySQL root password and JWT secret —
+ideally the same values already in `secrets/db_password.txt` and `secrets/jwt_secret.txt`,
+so Compose and Kubernetes use identical credentials.
+ 
+### Step 4 — Load Images Into Minikube
+ 
+If you've already built and pushed the images per Part 1, load them directly from your
+local Docker cache into minikube (faster and more reliable than pulling from Docker Hub again):
+ 
+```bash
+minikube image load your_dockerhub_username/iot-backend:v4.0
+minikube image load your_dockerhub_username/iot-frontend:v4.0
+minikube image load your_dockerhub_username/iot-db:v4.0
+```
+ 
+> If your image names in `k8s/*.yaml` reference a different Docker Hub username, update
+> the `image:` field in `k8s/backend-deployment.yaml`, `k8s/frontend-deployment.yaml`, and
+> `k8s/db-deployment.yaml` accordingly before applying.
+ 
+### Step 5 — Apply the Manifests
+ 
+Apply everything in the `k8s/` directory:
+ 
+```bash
+kubectl apply -f k8s/
+```
+ 
+This creates, in dependency order:
+- The Secret (`sensorix-secrets`)
+- The database PersistentVolumeClaim, Deployment, and Service
+- The backend Deployment and Service (`iot-backend-svc`)
+- The frontend Deployment and Service
+### Step 6 — Verify the Deployment
+ 
+```bash
+kubectl get pods
+kubectl get svc
+kubectl get pvc
+```
+ 
+All Pods should reach `1/1 Ready` / `Running`. The database PVC should show `Bound`.
+ 
+Check backend startup:
+```bash
+kubectl logs -l app=iot-backend-svc --tail 30
+```
+Look for `Started IotmonitorApplication` with no errors following it.
+ 
+### Step 7 — Access the Application
+ 
+The frontend Service is exposed via NodePort. Get the reachable URL:
+ 
+```bash
+minikube service frontend --url
+```
+ 
+Open the printed URL in your browser — this serves the full application, with the
+frontend proxying API calls through to the backend and database running inside the cluster.
+ 
+### Tearing Down the Cluster Deployment
+ 
+To remove all Kubernetes objects (keeps the database's persistent volume claim by default):
+ 
+```bash
+kubectl delete -f k8s/
+```
+ 
+To also delete the persisted database volume (wipes all data):
+ 
+```bash
+kubectl delete pvc db-pvc
+```
+ 
+To stop the entire minikube cluster:
+ 
+```bash
+minikube stop
+```
+ 
+To delete it completely (removes the cluster, not just stops it):
+ 
+```bash
+minikube delete
+```
+ 
+---
+
 ## Security Notes
 
 - Never commit `.env`, `secrets/`, or any file containing passwords or tokens
-- Both `.env` and `secrets/` are listed in `.gitignore`
+- `.env`, `secrets/`, and `k8s/secret.yaml` are all listed in `.gitignore`
 - Jenkins credentials are encrypted at rest using the master key stored in `jenkins_home`
 - Secret values are masked as `****` in all Jenkins build logs
 - Docker Compose secrets are mounted as read-only files at `/run/secrets/` inside containers — never visible via `docker inspect`
+- Kubernetes Secrets are base64-encoded and access-controlled via RBAC — not encrypted at rest by default
 - The backend runs as a non-root `spring` user inside its container
