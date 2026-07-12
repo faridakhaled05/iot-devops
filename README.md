@@ -570,6 +570,26 @@ Expected: HTTP 400. Anything else means the backend did not start correctly.
 This path runs the full stack on a local Kubernetes cluster via minikube, instead of
 Docker Compose. All manifests referenced below already exist in this repo under `k8s/`.
  
+### Before You Begin — What Must Already Be Done
+ 
+This section assumes the following are already complete. If any of these aren't true yet,
+go do them first — Part 3 will not work otherwise.
+ 
+- **Part 1 has been completed at least once** — specifically, the three images
+  (`iot-backend`, `iot-frontend`, `iot-db`) have been built and pushed to your Docker Hub
+  account under a tag (e.g. `v4.0`). Kubernetes pulls images from Docker Hub (or loads them
+  from your local Docker cache into minikube) — it does not build them itself.
+- **The sibling directory structure exists**, i.e. `iot-devops`, `iot-backend`, and
+  `iot-frontend` are all cloned at the same level under a common parent (see
+  **Repository Structure** above). Referred to below as `~/sensorix/` for consistency,
+  but any parent folder name works as long as all three repos sit alongside each other.
+- **All commands below are run from inside `iot-devops/`** (e.g. `~/sensorix/iot-devops`),
+  since that's where the `k8s/` directory lives. `cd` there first if you're not already.
+- **Docker is installed and working** (already a prerequisite above).
+- If working on WSL2/Windows: all commands run **inside the WSL Linux shell**, never CMD
+  or PowerShell — `kubectl`, `minikube`, and `docker` in this setup are installed inside
+  WSL and are not reachable from a native Windows terminal.
+ 
 ### Prerequisites
  
 - `kubectl` 
@@ -680,6 +700,80 @@ minikube service frontend --url
  
 Open the printed URL in your browser — this serves the full application, with the
 frontend proxying API calls through to the backend and database running inside the cluster.
+
+### Step 8 — Verify Rolling Updates
+ 
+This demonstrates zero-downtime deployment — a new version replaces the old one without
+any dropped requests, governed by the `RollingUpdate` strategy in `k8s/backend-deployment.yaml`
+(`maxUnavailable: 1`, `maxSurge: 1`).
+ 
+**Create a new tag to roll out.** No code change is required to demonstrate the mechanism —
+retagging an existing image is sufficient, since Kubernetes reacts to the tag/template
+changing, not to what's actually inside the image:
+ 
+```bash
+docker tag your_dockerhub_username/iot-backend:v4.0 your_dockerhub_username/iot-backend:v4.1
+docker push your_dockerhub_username/iot-backend:v4.1
+minikube image load your_dockerhub_username/iot-backend:v4.1
+```
+ 
+**Update the manifest** — open `k8s/backend-deployment.yaml` and change the `image:` line
+to the new tag (`v4.1`).
+ 
+**Apply and watch it live.** In one terminal, start watching before applying:
+```bash
+kubectl get pods -w
+```
+In a second terminal:
+```bash
+kubectl apply -f k8s/backend-deployment.yaml
+```
+ 
+You should see a new Pod (different ReplicaSet hash) come up, pass its readiness probe,
+and only then does an old Pod begin terminating — repeating until both replicas are on
+the new version. At no point does the Pod count drop below 1 or exceed 3.
+ 
+Confirm the rollout completed cleanly:
+```bash
+kubectl rollout status deployment/iot-backend-svc
+```
+ 
+**To undo a rollout** (roll back to the previous version):
+```bash
+kubectl rollout undo deployment/iot-backend-svc
+kubectl rollout status deployment/iot-backend-svc
+```
+ 
+---
+ 
+### Step 9 — Verify Scaling
+ 
+This demonstrates independently scaling one stateless service without affecting the rest
+of the stack.
+ 
+**Scale the backend up:**
+```bash
+kubectl scale deployment/iot-backend-svc --replicas=4
+kubectl get pods
+kubectl get deployment iot-backend-svc
+```
+You should see two additional Pods created on the same ReplicaSet (same image, same
+config — just more copies), and the Deployment showing `4/4` ready.
+ 
+**Scale back down to steady state:**
+```bash
+kubectl scale deployment/iot-backend-svc --replicas=2
+kubectl get pods
+```
+ 
+> **Note on scaling the database:** `db` is intentionally kept at `replicas: 1` and should
+> not be scaled up. Its PersistentVolumeClaim uses `ReadWriteOncePod`, which Kubernetes
+> enforces at the scheduler level — a second Pod attempting to use the same volume will be
+> rejected and stuck in `Pending` (confirm via `kubectl describe pod <pending-db-pod>` if
+> ever tested). This is expected and correct: a single MySQL instance without configured
+> replication cannot safely run as multiple writers against the same data.
+ 
+---
  
 ### Tearing Down the Cluster Deployment
  
