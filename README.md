@@ -1,4 +1,4 @@
-# Sensorix — DevOps Setup (Sprint 3)
+# Sensorix — DevOps Setup 
 
 ## Project Overview
 
@@ -565,7 +565,7 @@ Expected: HTTP 400. Anything else means the backend did not start correctly.
 
 ---
 
-## Part 3 — Kubernetes Deployment (Sprint 4)
+## Part 3 — Kubernetes Deployment 
  
 This path runs the full stack on a local Kubernetes cluster via minikube, instead of
 Docker Compose. All manifests referenced below already exist in this repo under `k8s/`.
