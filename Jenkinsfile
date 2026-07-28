@@ -2,8 +2,8 @@ pipeline {
     agent any
 
     environment {
-        DOCKERHUB_USER  = 'yosra01'
-        IMAGE_TAG       = 'v4.0'
+        DOCKERHUB_USER  = 'aliyehia'
+        IMAGE_TAG       = 'v4.1'
         //BUILDER         = 'native'   -> mac specific
         DOCKER_USERNAME = "${DOCKERHUB_USER}"
         BACKEND_IMAGE   = "${DOCKERHUB_USER}/iot-backend:${IMAGE_TAG}"
