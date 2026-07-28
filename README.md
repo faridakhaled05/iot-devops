@@ -803,6 +803,278 @@ minikube delete
  
 ---
 
+## Part 4 - Latest Sprint: OpenShift and Tekton CI/CD
+
+This sprint moved the project from a local Kubernetes/Jenkins deployment model toward
+live hosting on Red Hat OpenShift with OpenShift Pipelines (Tekton). The earlier
+Docker Compose, Jenkins, and Minikube sections are still kept above as historical and
+local setup paths. This section documents the newer deployment path.
+
+### 4.1 OpenShift Manifest Migration
+
+The existing Kubernetes manifests were duplicated into a separate OpenShift deployment
+set instead of overwriting the Kubernetes baseline. The OpenShift manifests live under:
+
+```text
+deployment/
+├── k8s/
+└── openshift/
+```
+
+The OpenShift version keeps the same application shape:
+
+- MySQL database Deployment, PVC, and internal Service
+- Spring Boot backend Deployment and internal Service
+- Angular/Nginx frontend Deployment and internal Service
+
+The important OpenShift-specific changes were:
+
+- Frontend external access now uses an OpenShift `Route`.
+- Frontend Service exposure changed away from NodePort to `ClusterIP`.
+- Internal service-to-service communication stays inside the OpenShift project.
+- Route TLS uses edge termination with HTTP redirected to HTTPS.
+- The Kubernetes manifests remain available for Minikube/local cluster work.
+
+Apply the OpenShift manifests from `iot-devops` with:
+
+```bash
+oc apply -f deployment/openshift/
+```
+
+Verify the deployed resources:
+
+```bash
+oc get pods
+oc get svc
+oc get routes
+oc rollout status deployment/backend
+oc rollout status deployment/frontend
+```
+
+The public frontend URL is obtained from the Route:
+
+```bash
+oc get route frontend
+```
+
+### 4.2 Dockerfile Adjustments for OpenShift
+
+The frontend and backend Dockerfiles were adjusted so the images run correctly under
+OpenShift's stricter runtime model.
+
+Backend changes focused on keeping the Spring Boot container compatible with OpenShift:
+
+- The backend runs as the non-root `spring` user.
+- Startup still uses `docker-entrypoint.sh`.
+- The old local filesystem profile-picture storage path was no longer treated as the
+  deployment storage strategy after profile images moved to Cloudflare R2.
+
+Frontend changes focused on serving Angular through Nginx inside OpenShift:
+
+- The frontend listens through the container port expected by the OpenShift Service.
+- Nginx writable/cache paths are mounted or redirected so the container can run under
+  OpenShift security constraints.
+- The frontend Route sends public traffic to the frontend Service instead of relying on
+  a NodePort.
+
+### 4.3 OpenShift Secrets
+
+Runtime secrets were moved into OpenShift Secrets rather than being stored in Git or in
+pipeline YAML. The live backend expects database, JWT, and R2 values to be injected from
+OpenShift.
+
+Current secret-backed values include:
+
+- MySQL root/application password
+- JWT signing secret
+- Docker Hub pull/push credentials for pipeline image publication
+- SonarCloud token for analysis
+- Cloudflare R2 profile-image storage configuration:
+  - `IOT_R2_ACCOUNT_ID`
+  - `IOT_R2_BUCKET`
+  - `IOT_R2_ACCESS_KEY_ID`
+  - `IOT_R2_SECRET_ACCESS_KEY`
+  - `IOT_R2_PUBLIC_BASE_URL`
+
+Only Secret references belong in manifests and pipelines. Secret values must never be
+committed.
+
+Useful inspection command:
+
+```powershell
+oc set env deployment/backend --list | Select-String "R2|IOT_R2"
+```
+
+### 4.4 Migration from Jenkins to Tekton
+
+The CI/CD workflow was migrated from the older Jenkins pipeline to OpenShift Pipelines
+(Tekton) so the build, validation, image publishing, smoke deployment, and live rollout
+run inside OpenShift.
+
+Pipeline definitions are stored beside the application code, not in `iot-devops`.
+This keeps each service's CI/CD behavior versioned with the code it builds.
+
+```text
+iot-backend/.tekton/
+|-- backend-pipeline.yaml
+|-- push.yaml
+`-- pull-request.yaml
+
+iot-frontend/.tekton/
+|-- frontend-pipeline.yaml
+|-- push.yaml
+`-- pull-request.yaml
+```
+
+The backend `.tekton` directory contains:
+
+| File | Purpose |
+|------|---------|
+| `backend-pipeline.yaml` | The reusable Tekton `Pipeline` definition for backend CI/CD. It clones the repo, runs Maven tests, runs SonarCloud analysis, builds and pushes the backend image, deploys a smoke backend, runs backend sanity checks, publishes release tags, updates the live backend Deployment, and cleans up smoke resources. |
+| `push.yaml` | Pipeline-as-Code `PipelineRun` template for pushes to `main`. It sets `deploy: "true"`, mounts the Docker Hub credentials workspace, and allows the pipeline to publish images and update the live backend. |
+| `pull-request.yaml` | Pipeline-as-Code `PipelineRun` template for pull requests targeting `main`. It sets `deploy: "false"` so PRs validate code without publishing production tags or changing the live backend Deployment. |
+
+The frontend `.tekton` directory contains:
+
+| File | Purpose |
+|------|---------|
+| `frontend-pipeline.yaml` | The reusable Tekton `Pipeline` definition for frontend CI/CD. It clones the repo, runs Angular tests with coverage, runs SonarCloud analysis, builds and pushes the frontend image, deploys a smoke frontend Route, runs Selenium sanity checks, publishes release tags, updates the live frontend Deployment, and cleans up smoke resources. |
+| `push.yaml` | Pipeline-as-Code `PipelineRun` template for pushes to `main`. It sets `deploy: "true"`, mounts Docker Hub credentials, and allows the validated frontend image to roll out live. |
+| `pull-request.yaml` | Pipeline-as-Code `PipelineRun` template for pull requests targeting `main`. It sets `deploy: "false"` so PRs run validation without changing the live frontend Route or Deployment. |
+
+Pipeline-as-Code integration is handled through annotations in each `push.yaml` and
+`pull-request.yaml` file. Those annotations tell OpenShift Pipelines:
+
+- which Git event should trigger the run (`push` or `pull_request`)
+- which branch should match (`main`)
+- which pipeline file to load (`.tekton/backend-pipeline.yaml` or `.tekton/frontend-pipeline.yaml`)
+- which Tekton task is required for cloning (`git-clone`)
+- how many old runs to keep (`max-keep-runs: "2"`)
+
+Pipeline-as-Code injects Git context into each run using template variables:
+
+- `{{ repo_url }}` becomes the repository URL.
+- `{{ revision }}` becomes the commit SHA or PR revision.
+- `{{ git_auth_secret }}` becomes the Git authentication Secret used by `git-clone`.
+
+Each PipelineRun uses the OpenShift `pipeline` service account and a PVC-backed
+`source` workspace. Push runs also mount the `dockerhub-credentials` workspace so the
+pipeline can push validated images. PR runs omit Docker publishing credentials where
+deployment is not needed.
+
+Both repositories therefore use two Pipeline-as-Code triggers:
+
+| Trigger | Event | Target | Deploys live? | Purpose |
+|---------|-------|--------|---------------|---------|
+| `push.yaml` | `push` | `main` | Yes | Build, validate, publish, smoke-test, and roll out the live Deployment |
+| `pull-request.yaml` | `pull_request` | `main` | No | Validate PR code without changing the live Deployment |
+
+The `deploy` pipeline parameter controls the difference:
+
+- `deploy: "true"` for push to `main`
+- `deploy: "false"` for pull requests
+
+### 4.5 Backend Tekton Pipeline Stages
+
+The backend pipeline has 10 stages:
+
+| Stage | What happens |
+|-------|--------------|
+| 1. `fetch-repository` | Clones the backend repository at the requested revision using Pipeline-as-Code Git auth. |
+| 2. `test-backend` | Runs Maven tests and produces backend test/coverage inputs before image build. |
+| 3. `sonar-analysis` | Runs SonarCloud analysis and quality gate checks. This integration is non-blocking for deployment, so diagnostics are collected without making SonarCloud availability the only deployment gate. |
+| 4. `calculate-version` | Computes immutable, version, commit, and latest Docker image tags for traceable releases. |
+| 5. `build-and-push` | Builds the backend image from the repo Dockerfile and pushes the immutable image to Docker Hub using the Docker config Secret. |
+| 6. `deploy-smoke-backend` | Creates a temporary `backend-smoke` Deployment and Service using the candidate image, Docker profile, DB Secret, JWT Secret, scheduler-disabled cron values, and R2 Secret references. |
+| 7. `backend-sanity-checks` | Runs backend API sanity checks against the smoke deployment before the image is allowed to progress. |
+| 8. `publish-additional-tags` | Copies the already-validated immutable image to version, commit, and `latest` tags. |
+| 9. `deploy-backend` | Updates the live `backend` Deployment image and patches required R2 Secret references into the live Deployment before rollout. |
+| 10. `cleanup-smoke-backend` | Deletes the temporary backend smoke Deployment and Service in a `finally` cleanup path. |
+
+Important backend safeguards:
+
+- Smoke deployment uses the same R2 Secret keys as the live backend.
+- The pipeline validates required R2 Secret keys before applying the smoke Deployment.
+- Scheduler cron values are disabled in smoke so temporary Pods do not run background polling jobs.
+- Readiness and liveness probes must pass before rollout is considered healthy.
+- Rollout diagnostics are printed if the smoke or live Deployment fails.
+
+### 4.6 Frontend Tekton Pipeline Stages
+
+The frontend pipeline also has 10 stages:
+
+| Stage | What happens |
+|-------|--------------|
+| 1. `fetch-repository` | Clones the frontend repository at the requested revision using Pipeline-as-Code Git auth. |
+| 2. `test-frontend` | Runs Angular unit tests with coverage before image build. |
+| 3. `sonar-analysis` | Runs SonarCloud analysis and quality gate checks. This is non-blocking in the same way as the backend pipeline. |
+| 4. `calculate-version` | Computes immutable, version, commit, and latest Docker image tags. |
+| 5. `build-and-push` | Builds the Angular/Nginx image and pushes the immutable image to Docker Hub. |
+| 6. `deploy-smoke-frontend` | Creates a temporary `frontend-smoke` Deployment, Service, and Route using the candidate image and OpenShift-compatible Nginx config. |
+| 7. `selenium-sanity-checks` | Runs Selenium smoke/sanity tests against the smoke Route with configured frontend and API base URLs. |
+| 8. `publish-additional-tags` | Publishes additional version, commit, and `latest` tags only after smoke validation passes. |
+| 9. `deploy-frontend` | Updates the live `frontend` Deployment image and waits for OpenShift rollout success. |
+| 10. `cleanup-smoke-frontend` | Deletes the temporary frontend smoke Deployment, Service, and Route in a `finally` cleanup path. |
+
+Important frontend safeguards:
+
+- PR runs validate code and SonarCloud without deploying live.
+- Push runs validate the smoke frontend first, then promotes the candidate image.
+- Selenium tests run against the smoke Route instead of the live Route.
+- The live frontend uses the OpenShift Route mechanism, not NodePort.
+
+### 4.7 Current Deployment Flow
+
+For a push to `main`, the current production path is:
+
+```text
+GitHub push
+-> Pipeline-as-Code trigger
+-> Tekton PipelineRun in OpenShift
+-> clone repo
+-> unit tests and coverage
+-> non-blocking SonarCloud analysis
+-> calculate image tags
+-> build and push immutable image
+-> deploy temporary smoke environment
+-> run sanity checks
+-> publish release tags
+-> update live OpenShift Deployment
+-> cleanup smoke resources
+```
+
+For a pull request, the flow stops before live deployment:
+
+```text
+GitHub pull request
+-> Pipeline-as-Code trigger
+-> Tekton PipelineRun in OpenShift
+-> clone repo
+-> unit tests and coverage
+-> non-blocking SonarCloud analysis
+-> no live Deployment update
+```
+
+This gives PRs fast validation while keeping live rollouts restricted to merged changes
+on `main`.
+
+### 4.8 Latest Sprint Outcome
+
+By the end of the sprint:
+
+- The Kubernetes deployment was preserved and duplicated into an OpenShift-specific path.
+- NodePort exposure was removed from the OpenShift frontend path and replaced with Routes.
+- Dockerfiles were adjusted for live OpenShift runtime behavior.
+- Backend, frontend, and database workloads were deployed to OpenShift.
+- Runtime secrets were added to OpenShift and referenced from manifests/pipelines.
+- Jenkins was superseded by Tekton/OpenShift Pipelines for live CI/CD.
+- Backend and frontend each received a 10-stage pipeline with smoke deployments,
+  sanity checks, image promotion, live rollout, and cleanup.
+- Push and pull-request triggers were added for both repositories.
+- SonarCloud analysis was integrated as a non-blocking quality signal.
+
+---
+
 ## Security Notes
 
 - Never commit `.env`, `secrets/`, or any file containing passwords or tokens

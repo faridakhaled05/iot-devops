@@ -1,0 +1,38 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: frontend-nginx-config
+data:
+  default.conf: |
+    server {
+        listen 8080;
+        listen [::]:8080;
+        server_name localhost;
+        root /usr/share/nginx/html;
+        index index.html;
+
+        gzip on;
+        gzip_vary on;
+        gzip_min_length 256;
+        gzip_types text/plain text/css application/json application/javascript text/javascript application/xml image/svg+xml;
+
+        location = /index.html {
+            add_header Cache-Control "no-cache";
+        }
+
+        location /api/ {
+            proxy_pass http://backend:8080/api/;
+            proxy_set_header Host $host;
+            proxy_set_header X-Real-IP $remote_addr;
+        }
+
+        location / {
+            try_files $uri $uri/ /index.html;
+        }
+
+        location ~* \.(?:css|js|mjs|ico|gif|jpe?g|png|webp|woff2?|svg)$ {
+            expires 7d;
+            add_header Cache-Control "public";
+            try_files $uri =404;
+        }
+    }

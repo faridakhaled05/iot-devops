@@ -1,0 +1,84 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: iot-backend-svc
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+  selector:
+    matchLabels:
+      app: iot-backend-svc
+  template:
+    metadata:
+      labels:
+        app: iot-backend-svc
+    spec:
+      containers:
+        - name: iot-backend-svc
+          image: yosra01/iot-backend:v4.0
+          ports:
+            - containerPort: 8080
+          env:
+            - name: SPRING_PROFILES_ACTIVE
+              value: "docker"
+            - name: SPRING_DATASOURCE_URL
+              value: "jdbc:mysql://db:3306/iot_db"
+            - name: SPRING_DATASOURCE_USERNAME
+              value: "root"
+            - name: SCHEDULER_TRAFFIC_CRON
+              value: "0 */1 * * * *"
+            - name: SCHEDULER_AIRPOLLUTION_CRON
+              value: "0 */1 * * * *"
+            - name: SCHEDULER_STREETLIGHT_CRON
+              value: "0 */1 * * * *"
+            - name: IOT_R2_ACCOUNT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: sensorix-secrets
+                  key: r2-account-id
+            - name: IOT_R2_BUCKET
+              valueFrom:
+                secretKeyRef:
+                  name: sensorix-secrets
+                  key: r2-bucket
+            - name: IOT_R2_ACCESS_KEY_ID
+              valueFrom:
+                secretKeyRef:
+                  name: sensorix-secrets
+                  key: r2-access-key-id
+            - name: IOT_R2_SECRET_ACCESS_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: sensorix-secrets
+                  key: r2-secret-access-key
+            - name: IOT_R2_PUBLIC_BASE_URL
+              valueFrom:
+                secretKeyRef:
+                  name: sensorix-secrets
+                  key: r2-public-base-url
+            - name: db_password
+              valueFrom:
+                secretKeyRef:
+                  name: sensorix-secrets
+                  key: db-password
+            - name: jwt_secret
+              valueFrom:
+                secretKeyRef:
+                  name: sensorix-secrets
+                  key: jwt-secret
+          readinessProbe:
+            httpGet:
+              path: /actuator/health/readiness
+              port: 8080
+            initialDelaySeconds: 20
+            periodSeconds: 10
+          livenessProbe:
+            httpGet:
+              path: /actuator/health/liveness
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 15
